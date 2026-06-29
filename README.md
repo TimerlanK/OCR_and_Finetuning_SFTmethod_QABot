@@ -48,6 +48,14 @@
 4. Откройте `history_finetuning.ipynb` → **Runtime → Run all**.
 5. Сохраните ноутбук вместе с выводами ячеек.
 
+## Публикация
+
+После обучения артефакты публикуются на Hugging Face Hub (публично):
+- Модель (LoRA-адаптер): `timkaiyr/kz-history-qa-llama3.1-8b`
+- Датасет + OCR-текст (`history_text.txt`): `timkaiyr/kz-history-qa-dataset`
+
+Метрики обучения логируются в Trackio (Space `timkaiyr/kz-history-trackio`).
+
 ## Секреты
 
 `OPENAI_API_KEY` и `HF_TOKEN` хранятся в локальном `.env` (исключён из git) или
