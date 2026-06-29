@@ -1,0 +1,33 @@
+# Local assistant config & planning notes — never publish
+.claude/
+CLAUDE.md
+PLAN.md
+
+# Secrets & local env — NEVER commit
+.env
+.venv/
+
+# Source scan — PRIVATE: copyrighted + large. Never commit, never push to HF.
+book.pdf
+
+# Course materials — keep LOCAL, do not publish (nFactorial reference, not our deliverable)
+Fine tuning_code example.md
+История_Казахстана_QA-бот.pdf
+
+# Deliverables are TRACKED (NOT ignored) — listed here only to document intent:
+#   history_sft_dataset.json -> PUBLIC  (committed + pushed to a public HF dataset repo)
+#   history_text.txt         -> PUBLIC  (committed + pushed into the HF dataset repo)
+#   history_finetuning.ipynb -> committed deliverable (saved with outputs)
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Training / model outputs (regenerated on Colab)
+sft_output/
+orpo_output/
+kz_history_qa_lora/
+outputs/
+surya_ocr_step.py
+loss_curve.png

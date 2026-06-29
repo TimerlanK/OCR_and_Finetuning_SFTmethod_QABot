@@ -1,0 +1,41 @@
+# Dependencies for history_finetuning.py (Google Colab, GPU T4).
+# Mirrors the install cell of the notebook. The pinned versions below are a
+# tested-compatible combination for the Unsloth + TRL stack.
+#
+# NOTE: Unsloth and unsloth_zoo are installed from GitHub (not PyPI), and TRL is
+# installed with --no-deps to keep these pins intact. requirements.txt cannot
+# express per-package --no-deps, so install with the commands at the bottom, or
+# just run the notebook's install cell.
+
+# --- Data generation / datasets / metrics / tracking / plotting ---
+openai
+datasets
+huggingface_hub
+accelerate
+trackio
+evaluate
+rouge_score
+sacrebleu
+nltk
+bert_score
+pandas
+tqdm
+matplotlib
+python-dotenv
+
+# --- Training stack (pinned) ---
+torch>=2.8.0
+triton>=3.4.0
+torchvision
+bitsandbytes==0.48.0
+transformers==4.56.2
+trl==0.22.2
+
+# --- Install Unsloth from GitHub + TRL without deps (run separately) ---
+# pip install "unsloth_zoo[base] @ git+https://github.com/unslothai/unsloth-zoo" \
+#             "unsloth[base] @ git+https://github.com/unslothai/unsloth"
+# pip install --no-deps trl==0.22.2
+#
+# OCR (Section 5) runs in an isolated environment to avoid a transformers/torch
+# clash, so it is NOT listed here:
+#   uv run --with surya-ocr --with pymupdf --with pillow python surya_ocr_step.py
