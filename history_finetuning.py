@@ -160,32 +160,31 @@ print(f"USE_BF16={USE_BF16}  USE_FP16={USE_FP16}")
 # %%
 # ============================================================
 # 4. LOGINS / SECRETS
-# CHANGED: load secrets from a git-ignored .env (local) with a Colab-secrets fallback,
-#          instead of the template's interactive login() / inline key.
+# CHANGED: read keys from Colab Secrets via google.colab.userdata
+#          (userdata.get('OPENAI_API_KEY') for OpenAI, userdata.get('HF_TOKEN')
+#          for Hugging Face), with a local .env / env-var fallback.
 # ============================================================
-try:
-    from dotenv import load_dotenv
-    load_dotenv()  # loads .env if present (local dev)
-except Exception:
-    pass
-
-
 def get_secret(name: str):
-    """Return secret from env/.env, else from Colab userdata, else None."""
-    val = os.environ.get(name)
-    if val:
-        return val
+    """Colab Secrets first (userdata.get), then a local .env / environment variable."""
     try:
-        from google.colab import userdata
-        return userdata.get(name)
+        from google.colab import userdata          # Colab Secrets (🔑 panel)
+        val = userdata.get(name)
+        if val:
+            return val
     except Exception:
-        return None
+        pass
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()                                # loads .env if present (local dev)
+    except Exception:
+        pass
+    return os.environ.get(name)
 
 
-OPENAI_API_KEY = get_secret("OPENAI_API_KEY")
-HF_TOKEN = get_secret("HF_TOKEN")
+OPENAI_API_KEY = get_secret("OPENAI_API_KEY")        # Colab: userdata.get('OPENAI_API_KEY')
+HF_TOKEN = get_secret("HF_TOKEN")                    # Colab: userdata.get('HF_TOKEN')
 
-assert OPENAI_API_KEY, "OPENAI_API_KEY missing (set it in .env or Colab secrets)"
+assert OPENAI_API_KEY, "OPENAI_API_KEY missing (add it to Colab Secrets or .env)"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 if HF_TOKEN:
     os.environ["HF_TOKEN"] = HF_TOKEN
