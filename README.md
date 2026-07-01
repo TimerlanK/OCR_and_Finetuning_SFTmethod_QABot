@@ -1,4 +1,4 @@
-# OCR and Fine-tuning QA Bot
+# OCR and Fine-tuning (SFT method) QA Bot
 
 Fine-tuning a language model to answer questions about the history of Kazakhstan
 (11th-grade school textbook), in Russian.
