@@ -7,8 +7,8 @@ PLAN.md
 .env
 .venv/
 
-# Source scan — PRIVATE: copyrighted + large. Never commit, never push to HF.
-book.pdf
+# book.pdf (source textbook scan) is TRACKED and pushed to the public GitHub repo.
+# (Still not pushed to the HF dataset repo — the OCR text history_text.txt represents it there.)
 
 # Course materials — keep LOCAL, do not publish (nFactorial reference, not our deliverable)
 Fine tuning_code example.md
@@ -18,6 +18,9 @@ Fine tuning_code example.md
 #   history_sft_dataset.json -> PUBLIC  (committed + pushed to a public HF dataset repo)
 #   history_text.txt         -> PUBLIC  (committed + pushed into the HF dataset repo)
 #   history_finetuning.ipynb -> committed deliverable (saved with outputs)
+
+# Authoring source kept LOCAL — only the notebook (with outputs) ships to GitHub.
+history_finetuning.py
 
 # Python / Jupyter
 __pycache__/
