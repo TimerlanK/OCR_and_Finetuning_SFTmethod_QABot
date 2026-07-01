@@ -2,12 +2,12 @@
 # # История Казахстана — QA-бот · Fine-tuning (Unsloth + Llama-3.1-8B)
 #
 # Дообучение модели отвечать на вопросы по истории Казахстана (11 класс).
-# Pipeline: **OCR (Surya) → QA-генерация (gpt-5-mini) → SFT QLoRA (Unsloth) → evaluation**.
+# Pipeline: **OCR (Qwen2.5-VL-7B) → QA-генерация (gpt-5-mini) → SFT QLoRA (Unsloth) → evaluation**.
 #
 # **How to run on Google Colab (GPU T4):**
 # 1. Upload `book.pdf` and this file to the Colab session.
 # 2. Provide secrets via a local `.env` or Colab secrets: `OPENAI_API_KEY`, `HF_TOKEN`
-#    (optional `HF_USERNAME` to enable Hub push + Trackio Space).
+#    (optional `HF_USERNAME` to enable Hub push).
 # 3. `pip install jupytext` then `jupytext --to notebook history_finetuning.py`.
 # 4. Open the generated `.ipynb` → **Runtime → Run all** → save the notebook WITH outputs.
 #
@@ -21,8 +21,8 @@
 # CHANGED: installs run via subprocess (not `!uv pip ...`) so this file stays valid
 #          Python — jupytext converts it cleanly and `python -m py_compile` passes.
 #          The pinned versions are the same combination as the template.
-# NOTE: Surya OCR is NOT installed here — it runs in an isolated `uv` env in Section 5
-#       to avoid a transformers/torch clash with the Unsloth stack.
+# NOTE: OCR uses Qwen2.5-VL-7B (4-bit) in Section 5 — it loads in the main env (Qwen2.5-VL
+#       is compatible with the pinned transformers==4.56.2) and is freed before training.
 # ============================================================
 import subprocess
 import sys
@@ -37,7 +37,7 @@ def sh(cmd: str) -> None:
 # Common libraries (data generation, datasets, metrics, tracking, plotting).
 sh(
     f"{sys.executable} -m pip install -q "
-    "openai datasets huggingface_hub accelerate trackio "
+    "openai datasets huggingface_hub accelerate "
     "evaluate rouge_score sacrebleu nltk bert_score pandas tqdm "
     "matplotlib python-dotenv"
 )
@@ -123,7 +123,7 @@ CONFIG = {
     "lora_dropout": 0,            # 0 = fastest for Unsloth
 
     # ---- OCR (Section 5) ----
-    "pdf_path": "book.pdf",
+    "pdf_path": "/content/sample_data/book.pdf",  # CHANGED: Colab upload location
     "page_start": 3,              # printed page numbers, inclusive
     "page_end": 23,
     "ocr_dpi": 300,
@@ -146,7 +146,7 @@ MODEL_REPO = f"{CONFIG['hf_username']}/{CONFIG['model_name']}"
 HF_READY = CONFIG["hf_username"] not in ("", "YOUR_HF_USERNAME")
 DO_PUSH = CONFIG["push_to_hub"] and HF_READY
 if CONFIG["push_to_hub"] and not HF_READY:
-    print("WARNING: hf_username is a placeholder — Hub push/Trackio-Space disabled. "
+    print("WARNING: hf_username is a placeholder — Hub push disabled. "
           "Set HF_USERNAME to enable.")
 
 print(f"Dataset repo: {DATASET_REPO}")
@@ -198,88 +198,93 @@ print("OpenAI client ready.")
 
 # %%
 # ============================================================
-# 5. OCR — Surya, full layout pipeline, BODY-ONLY  (ADDED)
+# 5. OCR — Qwen2.5-VL-7B (4-bit vision-LLM) -> history_text.txt  (ADDED)
 # Replaces the template's hardcoded knowledge blob: the data source is the textbook.
-# CHANGED: Surya runs in an ISOLATED `uv` environment (its torch/transformers deps would
-#          otherwise clash with the pinned Unsloth stack). It writes history_text.txt.
-# NOTE: Surya's Python API is version-sensitive; if the first run errors, this is the
-#       most likely cell to need a small tweak for the installed surya-ocr version.
+# CHANGED: a vision-LLM reads each page WITH CONTEXT, so Roman-numeral centuries (XI, XV),
+#          dates, Kazakh and English come out right (plain EasyOCR-ru dropped Latin letters
+#          -> wrong dates). Runs in the MAIN env — Qwen2.5-VL needs transformers>=4.49 and
+#          our pinned stack is 4.56.2 (compatible). Use Qwen2.5-VL, NOT Qwen3-VL (needs
+#          >=4.57). Loaded 4-bit, used for OCR, then FREED before training (Section 9).
+# FALLBACK: a proven EasyOCR main-env path is kept commented at the end of this cell.
 # ============================================================
-SURYA_SCRIPT = r'''
-import re, sys
-import fitz                       # PyMuPDF — render scanned pages to images
-from PIL import Image
-from surya.layout import LayoutPredictor
-from surya.detection import DetectionPredictor
-from surya.recognition import RecognitionPredictor
-
-# Keep only body regions; drop captions, figures, tables, page headers/footers.
-BODY = {"Text", "SectionHeader", "Section-header", "Title", "ListItem", "List-item"}
-NOISE = re.compile(r"(OKULYK\.KZ|предоставлен|Приказа Министра)", re.I)
-
-
-def render(page, dpi):
-    m = fitz.Matrix(dpi / 72, dpi / 72)
-    pix = page.get_pixmap(matrix=m)
-    return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-
-doc = fitz.open(PDF)
-layout_p, det_p, rec_p = LayoutPredictor(), DetectionPredictor(), RecognitionPredictor()
-
-pages = []
-for i in range(P0 - 1, P1):       # printed page numbers -> 0-indexed
-    img = render(doc[i], DPI)
-    layout = layout_p([img])[0]
-    ocr = rec_p([img], det_predictor=det_p)[0]
-
-    regions = [b for b in layout.bboxes if str(getattr(b, "label", "")) in BODY]
-    regions.sort(key=lambda b: getattr(b, "position", 0))   # reading order
-
-    used, blocks = set(), []
-    for reg in regions:
-        rx0, ry0, rx1, ry1 = reg.bbox
-        lines = []
-        for j, ln in enumerate(ocr.text_lines):
-            if j in used:
-                continue
-            lx0, ly0, lx1, ly1 = ln.bbox
-            cx, cy = (lx0 + lx1) / 2, (ly0 + ly1) / 2
-            if rx0 <= cx <= rx1 and ry0 <= cy <= ry1:
-                lines.append((ly0, ln.text))
-                used.add(j)
-        lines.sort()
-        text = " ".join(t for _, t in lines).strip()
-        if text and not NOISE.search(text):
-            blocks.append(text)
-    pages.append("\n".join(blocks))
-    print("[OCR] page", i + 1, "->", len(blocks), "body blocks", file=sys.stderr)
-
-full = "\n\n".join(p for p in pages if p.strip())
-open(OUT, "w", encoding="utf-8").write(full)
-print("[OCR] saved", OUT, len(full), "chars", file=sys.stderr)
-print(full[:800])
-'''
+OCR_PROMPT = (
+    "Извлеки весь основной текст с этой страницы учебника истории Казахстана (11 класс) "
+    "в правильном порядке чтения. Римские цифры (века, например XI, XV), даты и числа "
+    "перепиши ТОЧНО как в оригинале. Включай казахские и английские слова. Пропусти "
+    "колонтитулы, номера страниц и водяные знаки. Ничего не переводи и не добавляй от себя."
+)
+OCR_RENDER_DPI = 150          # moderate DPI -> bounded vision tokens (avoids T4 OOM)
 
 text_path = Path(CONFIG["text_path"])
 if text_path.exists() and text_path.stat().st_size > 0:
     print(f"{text_path} already exists — skipping OCR (delete it to re-run).")
 else:
-    # Inject config as plain Python (avoids brace-escaping the script body).
-    header = (
-        'PDF = "%s"\nP0 = %d\nP1 = %d\nDPI = %d\nOUT = "%s"\n'
-        % (CONFIG["pdf_path"], CONFIG["page_start"], CONFIG["page_end"],
-           CONFIG["ocr_dpi"], CONFIG["text_path"])
+    assert Path(CONFIG["pdf_path"]).exists(), (
+        f"PDF not found at {CONFIG['pdf_path']} — upload book.pdf and fix CONFIG['pdf_path']."
     )
-    Path("surya_ocr_step.py").write_text(header + SURYA_SCRIPT, encoding="utf-8")
-    sh(f"{sys.executable} -m pip install -q uv")
-    # Isolated env: surya + pymupdf + pillow only (does not touch the training env).
-    sh("uv run --with surya-ocr --with pymupdf --with pillow python surya_ocr_step.py")
+    sh(f"{sys.executable} -m pip install -q pymupdf")
+    import fitz                                   # PyMuPDF — render pages to images
+    from PIL import Image
+    from unsloth import FastVisionModel
+
+    # Pre-quantized 4-bit Qwen2.5-VL — ~5 GB, ungated; only model loaded at this point.
+    ocr_model, ocr_proc = FastVisionModel.from_pretrained(
+        "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit", load_in_4bit=True,
+    )
+    FastVisionModel.for_inference(ocr_model)
+
+    def render_page(page, dpi):
+        m = fitz.Matrix(dpi / 72, dpi / 72)
+        pix = page.get_pixmap(matrix=m, alpha=False)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        if max(img.size) > 1600:                  # safety cap on vision tokens / VRAM
+            img.thumbnail((1600, 1600))
+        return img
+
+    doc = fitz.open(CONFIG["pdf_path"])
+    page_texts = []
+    for i in range(CONFIG["page_start"] - 1, CONFIG["page_end"]):   # printed pages -> 0-indexed
+        img = render_page(doc[i], OCR_RENDER_DPI)
+        messages = [{"role": "user",
+                     "content": [{"type": "image"}, {"type": "text", "text": OCR_PROMPT}]}]
+        prompt = ocr_proc.apply_chat_template(messages, add_generation_prompt=True)
+        inputs = ocr_proc(text=[prompt], images=[img], return_tensors="pt").to(ocr_model.device)
+        gen = ocr_model.generate(**inputs, max_new_tokens=2048, do_sample=False, use_cache=True)
+        new = gen[0][inputs["input_ids"].shape[1]:]
+        page_texts.append(ocr_proc.decode(new, skip_special_tokens=True).strip())
+        print(f"[OCR] page {i + 1} -> {len(page_texts[-1])} chars")
+    doc.close()
+
+    history_text = "\n\n".join(p for p in page_texts if p.strip())
+    text_path.write_text(history_text, encoding="utf-8")
+    print(f"[OCR] saved {text_path} ({len(history_text)} chars)")
+
+    # Free the VLM before training (a T4 can't hold the VLM + Llama-8B at once).
+    del ocr_model, ocr_proc
+    gc.collect()
+    torch.cuda.empty_cache()
 
 history_text = text_path.read_text(encoding="utf-8")
 print(f"\nOCR text length: {len(history_text)} chars")
 print("----- OCR fragment -----")
 print(history_text[:600])
+
+# --- FALLBACK: EasyOCR in the main env (proven to work, but weaker on Roman numerals/Kazakh)
+#     — uncomment + delete history_text.txt and re-run this cell if Qwen2.5-VL errors. ----------
+# sh(f"{sys.executable} -m pip install -q easyocr pymupdf")
+# import fitz, easyocr
+# _NOISE = re.compile(r"(OKULYK\.KZ|Приказа Министра)", re.I)
+# _reader = easyocr.Reader(["ru"], gpu=torch.cuda.is_available())
+# def _render(page, dpi):
+#     m = fitz.Matrix(dpi / 72, dpi / 72); pix = page.get_pixmap(matrix=m, alpha=False)
+#     return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)
+# _doc = fitz.open(CONFIG["pdf_path"]); _parts = []
+# for _i in range(CONFIG["page_start"] - 1, CONFIG["page_end"]):
+#     _lines = _reader.readtext(_render(_doc[_i], CONFIG["ocr_dpi"]), detail=0, paragraph=True)
+#     _parts.append("\n".join(s.strip() for s in _lines if s.strip() and not _NOISE.search(s)))
+# _doc.close()
+# text_path.write_text("\n\n".join(p for p in _parts if p.strip()), encoding="utf-8")
+# history_text = text_path.read_text(encoding="utf-8"); print(history_text[:600])
 
 # %%
 # ============================================================
@@ -299,6 +304,10 @@ GENERATION_PROMPT = """Ты — эксперт по истории Казахс�
   "Что такое...?", "Какое значение имеет...?".
 - Ответы краткие (1-3 предложения), на русском, основаны ТОЛЬКО на тексте.
 - Не выдумывай факты, которых нет в тексте.
+- Даты, века (римские цифры, напр. XI, XV) и числа указывай ТОЧНО как в тексте,
+  не меняй и не округляй их.
+- Если факт неоднозначен, противоречив или текст в этом месте испорчен —
+  ПРОПУСТИ его, не угадывай.
 
 Верни СТРОГО JSON: {{"pairs": [{{"question": "...", "answer": "..."}}]}}
 """
@@ -436,46 +445,11 @@ print(f"Trainable: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
 # %%
 # ============================================================
-# 12. TRAINING CONFIG (SFTConfig) + Trackio
-# CHANGED: report_to="trackio" (template used "none"); optim="adamw_8bit" (low VRAM);
-#          push_to_hub wired to the user's auto-push (public) choice.
+# 12. TRAINING CONFIG (SFTConfig)
+# CHANGED: optim="adamw_8bit" (low VRAM); report_to="none" — Trackio was DROPPED because
+#          its latest release needs huggingface_hub>=1.0, which conflicts with the pinned
+#          transformers==4.56.2. The matplotlib loss curve in Section 14 shows the loss.
 # ============================================================
-import trackio
-
-trackio_space = f"{CONFIG['hf_username']}/kz-history-trackio" if HF_READY else None
-trackio.init(
-    project="kz-history-qa",
-    name=CONFIG["model_name"],
-    space_id=trackio_space,   # None -> local dashboard only
-    config={k: CONFIG[k] for k in
-            ("base_model_unsloth", "num_epochs", "learning_rate",
-             "lora_r", "lora_alpha", "max_length")},
-)
-
-
-# ADDED (huggingface-trackio skill): alerts are the skill's recommended diagnostic
-# mechanism. This callback flags training-loss anomalies (NaN/inf, sudden spikes) in
-# the Trackio dashboard + terminal — useful evidence for the "loss decreases" goal.
-import math
-from transformers import TrainerCallback
-
-
-class TrackioAlertCallback(TrainerCallback):
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if not logs or logs.get("loss") is None:
-            return
-        loss, step = logs["loss"], state.global_step
-        if math.isnan(loss) or math.isinf(loss):
-            trackio.alert(title="NaN/Inf loss",
-                          text=f"Loss is {loss} at step {step} — training diverged.",
-                          level=trackio.AlertLevel.ERROR)
-        elif getattr(self, "_prev", None) is not None and loss > self._prev * 2 and loss > 1.0:
-            trackio.alert(title="Loss spike",
-                          text=f"Loss rose {self._prev:.3f} -> {loss:.3f} at step {step}.",
-                          level=trackio.AlertLevel.WARN)
-        self._prev = loss
-
-
 training_args = SFTConfig(
     output_dir=CONFIG["output_dir"],
     num_train_epochs=CONFIG["num_epochs"],
@@ -488,7 +462,7 @@ training_args = SFTConfig(
     optim="adamw_8bit",          # CHANGED: low-VRAM optimizer
     weight_decay=0.01,
     logging_steps=5,
-    report_to="trackio",         # CHANGED: live loss dashboard
+    report_to="none",            # CHANGED: Trackio dropped (dep conflict); loss via Section 14
     eval_strategy="steps",
     eval_steps=25,
     save_strategy="steps",
@@ -501,7 +475,7 @@ training_args = SFTConfig(
     seed=42,
     # CHANGED: single explicit push AFTER training (Section 15) instead of pushing
     # adapter+card at every save_steps — avoids mid-training network stalls / partial
-    # checkpoint pushes on Colab. report_to="trackio" still streams metrics live.
+    # checkpoint pushes on Colab.
     push_to_hub=False,
 )
 print("Training config ready.")
@@ -519,7 +493,6 @@ trainer = SFTTrainer(
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     args=training_args,
-    callbacks=[TrackioAlertCallback()],   # ADDED: loss-anomaly alerts (trackio skill)
 )
 print("SFTTrainer ready.")
 
@@ -531,25 +504,25 @@ print(f"Effective batch size: {CONFIG['batch_size'] * CONFIG['gradient_accumulat
 train_result = trainer.train()
 print(f"Training finished. Final training loss: {train_result.training_loss:.4f}")
 
-# ADDED: static loss curve so the saved notebook shows it even without the Trackio Space.
-logs = [h for h in trainer.state.log_history if "loss" in h]
-if logs:
-    steps = [h.get("step", i) for i, h in enumerate(logs)]
-    losses = [h["loss"] for h in logs]
+# ADDED: static loss curve from the training log history (primary "loss decreases" evidence).
+# Overlays training loss and eval loss on the same axes (eval rows use the key "eval_loss").
+train_logs = [h for h in trainer.state.log_history if "loss" in h]
+eval_logs = [h for h in trainer.state.log_history if "eval_loss" in h]
+if train_logs:
     plt.figure(figsize=(7, 4))
-    plt.plot(steps, losses, marker="o", ms=3)
+    plt.plot([h["step"] for h in train_logs], [h["loss"] for h in train_logs],
+             marker="o", ms=3, label="training loss")
+    if eval_logs:
+        plt.plot([h["step"] for h in eval_logs], [h["eval_loss"] for h in eval_logs],
+                 marker="s", ms=4, label="eval loss")
     plt.xlabel("step")
-    plt.ylabel("training loss")
-    plt.title("Training loss — kz-history-qa (Llama-3.1-8B QLoRA)")
+    plt.ylabel("loss")
+    plt.title("Loss — kz-history-qa (Llama-3.1-8B QLoRA)")
+    plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig("loss_curve.png", dpi=120)
     plt.show()
-
-try:
-    trackio.finish()
-except Exception:
-    pass
 
 # %%
 # ============================================================

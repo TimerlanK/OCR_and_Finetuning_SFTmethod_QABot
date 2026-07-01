@@ -12,10 +12,11 @@
 **Конвейер:**
 
 1. **OCR** — распознавание страниц 3–23 файла `book.pdf` («История Казахстана,
-   11 класс») с помощью Surya (полный layout-анализ, только основной текст) →
-   `history_text.txt`.
+   11 класс») с помощью vision-модели **Qwen2.5-VL-7B** (4-bit). Модель читает
+   страницу с учётом контекста, поэтому римские цифры (века), даты, казахские и
+   английские слова распознаются корректно → `history_text.txt`.
 2. **Генерация датасета** — по распознанному тексту формируется набор пар
-   «вопрос–ответ» (300+ пар, генерация через `gpt-5-mini`) →
+   «вопрос–ответ» (283 пары, генерация через `gpt-5-mini`) →
    `history_sft_dataset.json`.
 3. **Дообучение (SFT / QLoRA)** — модель `Meta-Llama-3.1-8B-Instruct` (4-bit)
    дообучается с помощью Unsloth и TRL `SFTTrainer`.
@@ -54,7 +55,8 @@
 - Модель (LoRA-адаптер): `timkaiyr/kz-history-qa-llama3.1-8b`
 - Датасет + OCR-текст (`history_text.txt`): `timkaiyr/kz-history-qa-dataset`
 
-Метрики обучения логируются в Trackio (Space `timkaiyr/kz-history-trackio`).
+Кривая обучения строится в ноутбуке через matplotlib (`loss_curve.png`) и
+показывает две линии — training loss и eval loss — на одних осях.
 
 ## Секреты
 
@@ -64,4 +66,4 @@
 ## Стек
 
 Python · Unsloth · TRL · Transformers · PyTorch · Hugging Face Datasets ·
-Surya OCR · OpenAI API · Trackio · `evaluate` (ROUGE / BLEU / BERTScore).
+Qwen2.5-VL (OCR) · OpenAI API · `evaluate` (ROUGE / BLEU / BERTScore) · matplotlib.
