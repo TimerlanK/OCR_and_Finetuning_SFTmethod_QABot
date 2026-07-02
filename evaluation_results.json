@@ -1,0 +1,27 @@
+{
+  "model": "timkaiyr/kz-history-qa-llama3.1-8b",
+  "dataset": "timkaiyr/kz-history-qa-dataset",
+  "base_model": "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+  "num_eval_samples": 22,
+  "finetuned_metrics": {
+    "ROUGE-1": 20.18,
+    "ROUGE-2": 6.05,
+    "ROUGE-L": 19.12,
+    "BLEU": 3.67,
+    "BERTScore-F1": 73.46
+  },
+  "base_metrics": {
+    "ROUGE-1": 13.05,
+    "ROUGE-2": 4.72,
+    "ROUGE-L": 12.49,
+    "BLEU": 1.92,
+    "BERTScore-F1": 69.22
+  },
+  "average_improvement": 4.22,
+  "training": {
+    "num_epochs": 3,
+    "learning_rate": 0.0002,
+    "lora_r": 16,
+    "lora_alpha": 16
+  }
+}

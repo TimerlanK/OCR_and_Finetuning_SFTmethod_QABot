@@ -22,18 +22,18 @@ tqdm
 matplotlib
 python-dotenv
 
-# --- Training stack (pinned) ---
-torch>=2.8.0
+# --- Training stack (pinned to versions ALLOWED by unsloth==2026.6.9) ---
+torch>=2.8.0,<2.11.0
 triton>=3.4.0
 torchvision
-bitsandbytes==0.48.0
+bitsandbytes==0.49.2        # unsloth EXCLUDES 0.46.0 and 0.48.0
 transformers==4.56.2
 trl==0.22.2
 
-# --- Install Unsloth from GitHub + TRL without deps (run separately) ---
-# pip install "unsloth_zoo[base] @ git+https://github.com/unslothai/unsloth-zoo" \
-#             "unsloth[base] @ git+https://github.com/unslothai/unsloth"
+# --- Unsloth: PINNED from PyPI (reproducible), NOT git main; TRL installed --no-deps ---
+# Install trl BEFORE unsloth so unsloth sees its trl requirement already satisfied:
 # pip install --no-deps trl==0.22.2
+# pip install unsloth==2026.6.9 unsloth_zoo==2026.6.7
 #
 # OCR (Section 5) uses Qwen2.5-VL-7B (4-bit) loaded in the MAIN env via Unsloth
 # (unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit; Qwen2.5-VL is compatible with transformers==4.56.2).
