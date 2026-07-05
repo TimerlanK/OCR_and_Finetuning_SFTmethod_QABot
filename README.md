@@ -15,7 +15,7 @@ question–answer training set, QLoRA fine-tuning, and quality evaluation.
    context, so Roman numerals (centuries), dates, and Kazakh/English words are
    recognized correctly → `history_text.txt`.
 2. **Dataset generation** — from the recognized text, a set of question–answer
-   pairs is built (218 pairs, generated with `gpt-5-mini`) →
+   pairs is built (367 pairs, generated with `gpt-5-mini`) →
    `history_sft_dataset.json`.
 3. **Fine-tuning (SFT / QLoRA)** — `Meta-Llama-3.1-8B-Instruct` (4-bit) is
    fine-tuned with Unsloth and the TRL `SFTTrainer`.
@@ -53,18 +53,18 @@ shows two lines — training loss and eval loss — on the same axes.
 
 ## Results
 
-Final training loss: **0.9579** (3 epochs). Evaluation on a held-out split of 22
+Final training loss: **0.8916** (3 epochs). Evaluation on a held-out split of 37
 question–answer pairs (base model vs. fine-tuned), metrics as percentages:
 
 | Metric | Base | Fine-tuned |
 | --- | --- | --- |
-| ROUGE-1 | 13.05 | **20.18** |
-| ROUGE-2 | 4.72 | **6.05** |
-| ROUGE-L | 12.49 | **19.12** |
-| BLEU | 1.92 | **3.67** |
-| BERTScore-F1 | 69.22 | **73.46** |
+| ROUGE-1 | 16.41 | **24.89** |
+| ROUGE-2 | 5.38 | **10.19** |
+| ROUGE-L | 14.70 | **23.46** |
+| BLEU | 2.97 | **8.03** |
+| BERTScore-F1 | 69.50 | **73.32** |
 
-Fine-tuning improves every metric (average improvement **+4.22** points). Full
+Fine-tuning improves every metric (average improvement **+6.19** points). Full
 numbers are saved in `evaluation_results.json`.
 
 ## Secrets
